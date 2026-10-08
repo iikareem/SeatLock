@@ -1,8 +1,6 @@
-# SeatLock 🎟️🔒
+# SeatLock
 
-**A serverless ticket-drop engine on AWS that never double-sells a seat, seats families together or not at all, and refunds everyone exactly once when a show is cancelled.**
-
-> 100,000 fans. 5,000 seats. Families who need four seats together. A flaky payment provider. And an artist who might cancel.
+Serverless ticket-drop backend on AWS. Prevents double-selling, keeps group bookings atomic, and refunds cancelled events exactly once.
 
 ![status](https://img.shields.io/badge/status-in%20development-orange)
 ![language](https://img.shields.io/badge/TypeScript-core-3178c6)
@@ -11,73 +9,86 @@
 
 ---
 
+## About
+
+SeatLock is a portfolio project that models the hard parts of a high-demand ticket sale: concurrent seat claiming, group adjacency, payment uncertainty, and mass refunds under rate limits.
+
+It targets a realistic on-sale scenario: tens of thousands of buyers, a few thousand seats, families that need adjacent seats, an unreliable payment provider, and an event that may be cancelled mid-sale.
+
+The system is fully serverless. Core services are TypeScript; operational tooling (mock payment provider, sweeper, reconciler, auditor, load generator) is Go. Infrastructure is AWS CDK.
+
+| Goal | Outcome |
+|---|---|
+| Concurrency safety | A seat is never sold twice |
+| Payment safety | Retries and duplicates never double-charge |
+| Atomic groups | Adjacent seats are held completely or not at all |
+| Cancellation | Every paid order is refunded once, within provider rate limits |
+
+This is a learning and portfolio system, not production ticketing software. Payment and gate scanning are simulated.
+
+---
+
 ## Technologies
 
 ### Programming languages
 
-| Language | Where it is used |
+| Language | Use |
 |---|---|
-| **TypeScript** | Core business logic (holds, orders, saga steps, cancellation, refunds) and AWS CDK infrastructure |
-| **Go** | Tooling and workers: mock payment provider, hold sweeper, reconciler, stream relay, load generator, auditor |
+| TypeScript | Core business logic (holds, orders, saga steps, cancellation, refunds) and CDK infrastructure |
+| Go | Mock payment provider, hold sweeper, reconciler, stream relay, load generator, auditor |
 
 ### Frameworks and tools
 
 | Tool | Role |
 |---|---|
-| **AWS CDK (TypeScript)** | Infrastructure as code — stacks, constructs, environments |
-| **Node.js 20+** | Runtime for TypeScript Lambdas and CDK |
-| **Docker** | Local AWS emulator (MiniStack) and reproducible tooling |
-| **MiniStack** | Local AWS emulator for development and failure tests |
+| AWS CDK (TypeScript) | Infrastructure as code |
+| Node.js 20+ | Runtime for TypeScript Lambdas and CDK |
+| Docker | Local emulator and reproducible tooling |
+| MiniStack | Local AWS emulator for development and failure tests |
 
 ### AWS services
 
-| Service | Role in SeatLock |
+| Service | Role |
 |---|---|
-| **API Gateway** | Public HTTP API with throttling, validation, and JWT authorizers |
-| **Amazon Cognito** | Fan authentication and admin group for cancellation |
-| **AWS Lambda** | Business logic: holds, orders, saga steps, cancel, refund workers |
-| **Amazon DynamoDB** | Events, seats, orders, ledger, idempotency, refund batches |
-| **DynamoDB Streams** | Change events relayed to EventBridge (no separate outbox table) |
-| **AWS Step Functions** | Purchase saga with compensation paths |
-| **Amazon SQS (+ DLQ)** | Order buffering and rate-limited refund queue |
-| **Amazon EventBridge** | Domain events (email, audit, analytics) |
-| **EventBridge Scheduler** | Hold sweeper and reconciler schedules |
-| **Amazon SNS + SES** | Notifications and fan email (including refunds) |
-| **Amazon S3** | Signed tickets, refund reports, optional seat-map frontend |
-| **AWS KMS** | Encryption at rest and ticket signing |
-| **Secrets Manager / SSM Parameter Store** | Secrets and tunable config (hold time, group cap, refund rate) |
-| **Amazon CloudFront** | Optional CDN for the seat-map frontend |
-| **Amazon CloudWatch + AWS X-Ray** | Logs, metrics, alarms, and distributed tracing |
+| API Gateway | Public HTTP API with throttling, validation, and JWT authorizers |
+| Amazon Cognito | Fan authentication and admin group for cancellation |
+| AWS Lambda | Holds, orders, saga steps, cancel, and refund workers |
+| Amazon DynamoDB | Events, seats, orders, ledger, idempotency, refund batches |
+| DynamoDB Streams | Change events relayed to EventBridge |
+| AWS Step Functions | Purchase saga with compensation |
+| Amazon SQS (+ DLQ) | Order buffering and rate-limited refund queue |
+| Amazon EventBridge | Domain events (email, audit, analytics) |
+| EventBridge Scheduler | Hold sweeper and reconciler schedules |
+| Amazon SNS + SES | Notifications and email delivery |
+| Amazon S3 | Signed tickets, refund reports, optional seat-map frontend |
+| AWS KMS | Encryption at rest and ticket signing |
+| Secrets Manager / SSM Parameter Store | Secrets and tunable configuration |
+| Amazon CloudFront | Optional CDN for the seat-map frontend |
+| Amazon CloudWatch + AWS X-Ray | Logs, metrics, alarms, and tracing |
 
 ---
 
 ## Table of Contents
 
-1. [Technologies](#technologies)
-2. [The Problem](#the-problem)
-3. [The Promises](#the-promises)
-4. [Why It's Hard](#why-its-hard)
-5. [How It Works](#how-it-works)
-   - [Level 1: Hold](#level-1-hold-just-changes-the-seat)
-   - [Group Booking](#group-booking-four-seats-together-or-nothing)
-   - [Level 2: Order](#level-2-order-starts-the-whole-logic)
-   - [Seat State Machine](#seat-state-machine)
-   - [The Purchase Saga](#the-purchase-saga-aws-step-functions)
-   - [Event Cancellation and Mass Refunds](#event-cancellation-and-mass-refunds)
-6. [Architecture](#architecture)
-7. [Tech Stack and Why](#tech-stack-and-why)
-8. [Data Model](#data-model)
-9. [Key Design Decisions](#key-design-decisions)
-10. [Failure Scenarios](#failure-scenarios)
-11. [API Reference](#api-reference)
-12. [Repository Structure](#repository-structure)
-13. [Getting Started](#getting-started)
-14. [Testing and Results](#testing-and-results)
-15. [Observability](#observability)
-16. [Security](#security)
-17. [Cost](#cost)
-18. [Roadmap](#roadmap)
-19. [What I Learned](#what-i-learned)
+1. [About](#about)
+2. [Technologies](#technologies)
+3. [The Problem](#the-problem)
+4. [Guarantees](#guarantees)
+5. [Design Challenges](#design-challenges)
+6. [How It Works](#how-it-works)
+7. [Architecture](#architecture)
+8. [Tech Stack Rationale](#tech-stack-rationale)
+9. [Data Model](#data-model)
+10. [Key Design Decisions](#key-design-decisions)
+11. [Failure Scenarios](#failure-scenarios)
+12. [API Reference](#api-reference)
+13. [Repository Structure](#repository-structure)
+14. [Getting Started](#getting-started)
+15. [Testing and Results](#testing-and-results)
+16. [Observability](#observability)
+17. [Security](#security)
+18. [Cost](#cost)
+19. [Roadmap](#roadmap)
 20. [Limitations](#limitations)
 21. [License](#license)
 
@@ -85,86 +96,84 @@
 
 ## The Problem
 
-When a big concert goes on sale, the same things go wrong every time:
+High-demand ticket sales repeatedly fail in the same ways:
 
-- The **same seat gets sold to two people**
-- People are **charged but never receive a ticket**
-- A retry or a duplicate message **charges someone twice**
-- A family of four ends up **scattered across the venue**, or holding two seats they can't use
-- The site **falls over** under the burst of traffic
+- The same seat is sold to two buyers
+- A buyer is charged but never receives a ticket
+- A retry or duplicate message charges someone twice
+- A family of four is split across the venue, or left with a partial hold
+- The API collapses under the on-sale burst
 
-And when the show is cancelled, it gets worse: thousands of refunds must go out through a payment provider that throttles you, some will fail, and nobody should be refunded twice or forgotten.
+Cancellation makes it worse. Thousands of refunds must pass through a throttled payment provider. Some calls fail. No order should be refunded twice, and none should be forgotten.
 
-SeatLock is a backend built to prevent all of this, using only managed AWS services and no servers to run.
+SeatLock addresses these failure modes with managed AWS services only.
 
-## The Promises
+## Guarantees
 
-| # | Promise | What it means |
+| # | Guarantee | Meaning |
 |---|---|---|
-| 1 | **One seat, one buyer** | A seat is never sold twice, even when thousands of people click at the same moment |
-| 2 | **One purchase, one charge** | Client retries, duplicate messages, and crashes never double-charge anyone |
-| 3 | **No charge without a ticket** | If anything fails mid-purchase, both the money and the seat are returned |
-| 4 | **Together or not at all** | A group of seats is held completely or not at all, never partially |
-| 5 | **Cancelled means refunded, exactly once** | When an event is cancelled, every paid order is refunded once, within the provider's rate limits, and nothing is lost |
+| 1 | One seat, one buyer | A seat is never sold twice under concurrent claim |
+| 2 | One purchase, one charge | Client retries, duplicate messages, and crashes do not double-charge |
+| 3 | No charge without a ticket | Mid-purchase failure returns both money and seat |
+| 4 | Together or not at all | A group hold succeeds completely or fails cleanly |
+| 5 | Cancelled means refunded once | Every paid order is refunded once, within provider rate limits |
 
-## Why It's Hard
+## Design Challenges
 
-The sharpest questions this project answers:
+Two questions drive the design:
 
-> **What happens when your 5-minute seat hold expires while your payment is still in flight?**
->
-> **What happens when 5,000 refunds must go through a provider that only accepts 50 requests per second, while some purchases are still mid-flight?**
+> What happens when a 5-minute seat hold expires while payment is still in flight?
+
+> What happens when 5,000 refunds must go through a provider limited to 50 requests per second, while some purchases are still mid-saga?
 
 | Challenge | Why it is hard |
 |---|---|
-| Overselling under concurrency | Thousands of buyers compete for the same seats at the same moment |
-| Exactly-once *effect* | At-least-once delivery means the same message can arrive twice |
-| Unknown outcomes | A payment call times out. Did it succeed or not? |
+| Overselling under concurrency | Thousands of buyers compete for the same seats at once |
+| Exactly-once effect | At-least-once delivery can deliver the same message twice |
+| Unknown outcomes | A payment call times out; success is ambiguous |
 | Hold expiry race | The hold expires while payment is in progress |
-| TTL is not instant | DynamoDB TTL deletion can lag by minutes, so it cannot be trusted for correctness |
+| TTL lag | DynamoDB TTL deletion can lag by minutes and cannot be trusted for correctness |
 | Hot keys | Popular seats create contention on single partitions |
-| Traffic spikes | A burst must be absorbed without losing requests |
-| Compensation | A failure after the seat was taken must undo state safely |
-| **Group atomicity** | Holding 4 seats means 4 writes that must all succeed or all fail |
-| **Overlapping groups** | Two groups want overlapping seats, so one must lose cleanly with no partial holds left behind |
-| **Cancellation race** | The event is cancelled while purchases are mid-saga |
-| **Refund backpressure** | The provider throttles refunds, so you must slow down without losing any |
-| **Double refunds** | Retries and duplicate messages must never refund the same order twice |
-| **Unknown refund outcomes** | A refund times out. Did the money go back or not? |
+| Traffic spikes | Bursts must be absorbed without losing requests |
+| Compensation | Failure after a seat is taken must undo state safely |
+| Group atomicity | Holding four seats means four writes that must all succeed or all fail |
+| Overlapping groups | Two groups want overlapping seats; one must lose with no partial holds |
+| Cancellation race | The event is cancelled while purchases are mid-saga |
+| Refund backpressure | The provider throttles; the system must slow down without losing work |
+| Double refunds | Retries must never refund the same order twice |
+| Unknown refund outcomes | A refund times out; the money may or may not have returned |
 
 ---
 
 ## How It Works
 
-SeatLock uses a **two-level flow**: a cheap, fast first step, then the full process.
+SeatLock uses a two-level flow: a cheap concurrency gate, then a durable purchase saga.
 
-### Level 1: Hold (just changes the seat)
+### Level 1: Hold
 
-`POST /events/{eventId}/holds` does one thing: a conditional write on the seat (or on several seats at once for a group).
+`POST /events/{eventId}/holds` performs a conditional write on one seat or a group of seats:
 
 ```
 AVAILABLE → HELD   (holdId, owner, expiresAt = now + 5 minutes)
 ```
 
-- No order, no payment, no saga
-- Cheap, so it can absorb a flood of clicks
-- It is the **concurrency gate**: the conditional write decides who wins, and everyone else gets an immediate "seat taken"
-- There is **no timer**. The hold is data (`status` and `expiresAt`) checked at the moment of each decision
+- No order, payment, or saga at this stage
+- Cheap enough to absorb a flood of clicks
+- The conditional write is the concurrency gate; losers get an immediate conflict
+- There is no timer process. Hold validity is `status` and `expiresAt`, checked at decision time
 
-### Group Booking: four seats together, or nothing
+### Group booking
 
-A family wants four adjacent seats. Holding them one by one is dangerous: if only three succeed, the fan is stuck with a partial hold while the fourth seat is gone.
+Holding seats one by one risks a partial hold (three of four succeed). SeatLock claims a group atomically:
 
-SeatLock holds a group **atomically**:
+1. The client requests `groupSize` seats in a section, or names specific seats (cap default: 8).
+2. The server reads the row (seat IDs are zero-padded and sorted) and finds consecutive free blocks.
+3. It attempts one block with `TransactWriteItems`. Every seat must be `AVAILABLE` (or have an expired hold), or the transaction is rejected.
+4. On conflict, it re-reads and tries the next candidate block, up to a bounded number of attempts.
+5. Transaction conflicts retry with jittered backoff.
+6. If nothing fits, the client receives `409` and no seat remains held.
 
-1. The client asks for `groupSize` seats (for example 4) in a section, or names specific seats. Group size is capped (default 8).
-2. The server reads the row (seat IDs are zero-padded and sorted, so a row is one range query) and finds candidate blocks of **consecutive** free seats.
-3. It tries one block with a single `TransactWriteItems`: every seat must be `AVAILABLE` (or have an expired hold), or the whole transaction is rejected.
-4. If a seat was taken in the meantime, it re-reads and tries the next candidate block, up to a bounded number of attempts.
-5. If transactions conflict with each other, it retries with jittered backoff.
-6. If nothing fits, the client gets a clear `409` and no seat is left held.
-
-All seats in a group share **one `holdId`**, one expiry, and one order. The saga then locks, confirms, and releases them as a unit, again with transactions.
+All seats in a group share one `holdId`, one expiry, and one order. The saga locks, confirms, and releases them as a unit.
 
 ```
 Group A wants seats 10-13        Group B wants seats 12-15
@@ -172,23 +181,23 @@ Group A wants seats 10-13        Group B wants seats 12-15
         └──────── both run a transaction ┘
                          │
           one commits, the other is cancelled
-          cleanly. No seat is ever left half-held.
+          cleanly. No seat is left half-held.
 ```
 
-**Why this is interesting:** it forces you to learn DynamoDB transaction semantics, the cancellation reasons per item, the 2x write cost of transactions, and why a conflict is an expected outcome to handle, not an error to hide.
+This path exercises DynamoDB transaction semantics, per-item cancellation reasons, the 2x write cost of transactions, and conflict handling as a normal outcome.
 
-### Level 2: Order (starts the whole logic)
+### Level 2: Order
 
-`POST /orders` stays fast. It only:
+`POST /orders` stays fast. It:
 
 1. Checks the idempotency key
 2. Verifies the caller owns the hold and it has not expired
 3. Checks the event is still on sale
 4. Creates the order as `PENDING`
-5. Puts a message on SQS
+5. Enqueues a message on SQS
 6. Returns `202 Accepted`
 
-The heavy work then runs in a Step Functions saga.
+Heavy work runs in a Step Functions saga.
 
 ### Seat state machine
 
@@ -203,24 +212,24 @@ The heavy work then runs in a Step Functions saga.
                                           (compensation)
 ```
 
-The `PAYING` state is what solves the hold-expiry race. While a payment is running, the seat stays protected until `payUntil`, even if the original hold has run out.
+`PAYING` solves the hold-expiry race. While payment runs, the seat stays protected until `payUntil`, even if the original hold has expired.
 
-### The purchase saga (AWS Step Functions)
+### Purchase saga (AWS Step Functions)
 
-| # | Step | What it does |
+| # | Step | Behavior |
 |---|---|---|
-| 1 | **VerifyHold** | Confirms the caller owns the hold, the event is on sale, and enough time remains to pay |
-| 2 | **LockSeatForPayment** | `HELD → PAYING` for all seats in the hold, sets `payUntil` |
-| 3 | **AuthorizePayment** | Reserves funds (does not take them), idempotent |
-| 4 | **CheckPaymentStatus** | After a timeout, asks the provider what happened |
-| 5 | **ConfirmSeat** | `PAYING → SOLD` for all seats, only if the same `holdId` still owns them |
-| 6 | **CapturePayment** | Takes the authorized money |
-| 7 | **IssueTicket** | Generates one ticket per seat, signs it with KMS, stores it in S3 |
-| 8 | **MarkConfirmed** | Sets the order to `CONFIRMED` |
+| 1 | VerifyHold | Confirms ownership, event on sale, and enough time to pay |
+| 2 | LockSeatForPayment | `HELD → PAYING` for all seats in the hold; sets `payUntil` |
+| 3 | AuthorizePayment | Reserves funds (does not capture); idempotent |
+| 4 | CheckPaymentStatus | After timeout, queries the provider for the outcome |
+| 5 | ConfirmSeat | `PAYING → SOLD` only if the same `holdId` still owns the seats |
+| 6 | CapturePayment | Captures the authorized amount |
+| 7 | IssueTicket | Issues one ticket per seat, signs with KMS, stores in S3 |
+| 8 | MarkConfirmed | Sets the order to `CONFIRMED` |
 
-**Compensation:** `VoidAuthorization`, `RefundPayment`, `ReleaseSeat`, `MarkFailed`, `MarkRefunded`.
+Compensation paths: `VoidAuthorization`, `RefundPayment`, `ReleaseSeat`, `MarkFailed`, `MarkRefunded`.
 
-**Authorize first, capture last.** If the seat cannot be confirmed, the system only cancels a reservation. No money moved, so no refund is needed.
+Authorize first, capture last. If the seat cannot be confirmed, the system voids a reservation. No money moved, so no refund is required.
 
 ```
 VerifyHold → LockSeatForPayment → AuthorizePayment → ConfirmSeat
@@ -236,13 +245,13 @@ ConfirmSeat → CapturePayment → IssueTicket → MarkConfirmed
                               RefundPayment → ReleaseSeat → MarkRefunded
 ```
 
-Every step is **idempotent**, has **retries with backoff**, a **timeout**, and a **catch** that routes to the right compensation.
+Every step is idempotent, with retries and backoff, a timeout, and a catch that routes to the correct compensation.
 
-### Event Cancellation and Mass Refunds
+### Event cancellation and mass refunds
 
-The artist cancels. SeatLock must stop selling, deal with purchases that are mid-flight, and refund every paid order reliably.
+When an event is cancelled, SeatLock stops selling, finishes or fails in-flight purchases, and refunds every paid order.
 
-**Event lifecycle**
+Event lifecycle:
 
 ```
 ON_SALE ──► CANCELLING ──► CANCELLED
@@ -250,18 +259,18 @@ ON_SALE ──► CANCELLING ──► CANCELLED
                 └─ new holds and orders rejected immediately
 ```
 
-**The flow**
+Flow:
 
-1. **Admin cancels the event.** `POST /admin/events/{eventId}/cancel` (admin role only). A conditional write moves the event `ON_SALE → CANCELLING`. From this moment, new holds and new orders are rejected, and `VerifyHold` in the saga fails for anything that has not started paying.
-2. **A refund batch is created.** The orchestrator queries all orders for the event by status (through a GSI), creates a `RefundBatch` record with the total count, and enqueues **one refund job per order** onto an SQS queue.
-3. **Workers refund within the provider's limits.** A refund worker consumes the queue with **capped concurrency** so the provider's rate limit is respected. If the provider throttles (`429`), the message returns to the queue with a longer delay.
-4. **Each refund is idempotent.** The idempotency key is derived from the order ID, and the ledger `REFUND` entry is a conditional write, so a duplicate message can never refund twice.
-5. **Unknown outcomes are checked, not guessed.** If a refund call times out, the worker asks the provider for the refund status before retrying.
-6. **Orders and seats are updated.** A successful refund sets the order to `REFUNDED`, and the `OrderRefunded` event (through the DynamoDB Streams relay) triggers the fan's notification email.
-7. **Progress is tracked.** Atomic counters on the `RefundBatch` record (`succeeded`, `failed`) show live progress. When they add up to `total`, the batch is marked complete and a report is written to S3.
-8. **Failures are not lost.** Messages that keep failing go to a DLQ, trigger an alarm, and can be replayed after the cause is fixed.
-9. **Late arrivals are caught.** Purchases that were mid-saga when cancellation started finish or fail normally. The orchestrator sweeps again until no order for the event is in a non-terminal state, and the reconciler finds any `CONFIRMED` order in a cancelled event that has no refund.
-10. **Tickets are voided.** Ticket verification checks the event status, so a ticket for a cancelled event is rejected even though its signature is valid.
+1. Admin cancels via `POST /admin/events/{eventId}/cancel`. A conditional write moves `ON_SALE → CANCELLING`. New holds and orders are rejected; `VerifyHold` fails for work that has not started paying.
+2. The refund orchestrator queries orders by status (GSI), creates a `RefundBatch`, and enqueues one refund job per order.
+3. Refund workers run with capped concurrency to respect provider rate limits. On `429`, the message returns to the queue with a longer delay.
+4. Each refund is idempotent: key derived from order ID, plus a conditional ledger `REFUND` write.
+5. On timeout, the worker queries refund status before retrying.
+6. Success sets the order to `REFUNDED`; DynamoDB Streams triggers the fan notification.
+7. Atomic counters on `RefundBatch` track progress. When complete, a report is written to S3.
+8. Persistent failures go to a DLQ, raise an alarm, and can be replayed.
+9. Mid-saga purchases finish or fail normally. The orchestrator sweeps again until no non-terminal orders remain; the reconciler finds confirmed orders in cancelled events without a refund.
+10. Ticket verification checks event status, so cancelled-event tickets are rejected even with a valid signature.
 
 ```
 Admin ─► cancel-event ─► Events table (ON_SALE → CANCELLING)
@@ -286,7 +295,7 @@ Admin ─► cancel-event ─► Events table (ON_SALE → CANCELLING)
           RefundBatch counters ─► complete ─► report in S3
 ```
 
-**Why this is interesting:** most projects only show the happy purchase path. A mass refund shows backpressure, idempotency at scale, handling of partial failure, and operating a system after something goes wrong.
+The cancellation path covers backpressure, idempotency at scale, partial failure, and recovery after the happy path breaks.
 
 ---
 
@@ -335,34 +344,34 @@ Admin ─► cancel-event ─► Events table (ON_SALE → CANCELLING)
 
 ---
 
-## Tech Stack and Why
+## Tech Stack Rationale
 
-| Service / Tool | Role | Why it was chosen |
+| Service / Tool | Role | Why |
 |---|---|---|
-| **API Gateway** | Public HTTP API | Throttling, validation, and authorizers before Lambda runs |
-| **Cognito** | Authentication and roles | Real JWT auth. The user ID always comes from the token, and an admin group protects cancellation |
-| **Lambda** | Business logic | Scales with bursts, forces learning of concurrency and retries |
-| **DynamoDB** | All persistent data | Conditional writes and transactions give atomic seat and group claiming, with low latency under load |
-| **DynamoDB Streams** | Change events | Replaces an outbox table, so a change and its event cannot drift apart |
-| **Step Functions (Standard)** | Purchase saga | Durable, auditable, with visible execution history |
-| **SQS + DLQ** | Buffering and refund queue | Absorbs spikes, controls consumer concurrency to respect the provider limit, captures poison messages |
-| **EventBridge** | Domain events | Decouples producers from consumers |
-| **EventBridge Scheduler** | Sweeper and reconciler | Managed scheduling with no cron servers |
-| **SNS + SES** | Notifications | Fan-out and email delivery, including refund notices |
-| **S3** | Tickets and refund reports | Durable storage with presigned download links |
-| **KMS** | Encryption and signing | Tamper-evident tickets, customer-managed keys |
-| **Secrets Manager / SSM** | Secrets and config | Keeps keys out of code, allows tuning (hold time, group cap, refund rate) without redeploying |
-| **CloudWatch + X-Ray** | Observability | Logs, metrics, alarms, and tracing across the saga and the refund flow |
-| **AWS CDK (TypeScript)** | Infrastructure as code | Repeatable environments, reviewable changes |
-| **TypeScript** | Core services | Critical business rules, including money and seat logic, live in one strong language |
-| **Go** | Tooling and workers | Mock provider, sweeper, reconciler, auditor, and load generator |
-| **MiniStack** | Local AWS emulator | Fast, free local development and automated failure tests |
+| API Gateway | Public HTTP API | Throttling, validation, and authorizers before Lambda |
+| Cognito | Authentication and roles | JWT auth; user ID from token; admin group for cancellation |
+| Lambda | Business logic | Scales with bursts; forces explicit concurrency and retry design |
+| DynamoDB | Persistent data | Conditional writes and transactions for atomic seat and group claims |
+| DynamoDB Streams | Change events | Change and event stay coupled without a separate outbox |
+| Step Functions (Standard) | Purchase saga | Durable execution with visible history and compensation |
+| SQS + DLQ | Buffering and refund queue | Absorbs spikes, caps concurrency, captures poison messages |
+| EventBridge | Domain events | Decouples producers from consumers |
+| EventBridge Scheduler | Sweeper and reconciler | Managed scheduling without cron servers |
+| SNS + SES | Notifications | Fan-out and email, including refund notices |
+| S3 | Tickets and refund reports | Durable storage with presigned downloads |
+| KMS | Encryption and signing | Tamper-evident tickets; customer-managed keys |
+| Secrets Manager / SSM | Secrets and config | Keys out of code; tunable hold time, group cap, refund rate |
+| CloudWatch + X-Ray | Observability | Logs, metrics, alarms, and traces across saga and refunds |
+| AWS CDK (TypeScript) | Infrastructure as code | Repeatable environments and reviewable changes |
+| TypeScript | Core services | Critical money and seat rules in one typed codebase |
+| Go | Tooling and workers | Concurrency-friendly workers, auditor, and load generator |
+| MiniStack | Local AWS emulator | Fast local development and automated failure tests |
 
 ---
 
 ## Data Model
 
-### `Events`
+### Events
 
 | Attribute | Notes |
 |---|---|
@@ -370,20 +379,21 @@ Admin ─► cancel-event ─► Events table (ON_SALE → CANCELLING)
 | `status` | `ON_SALE`, `CANCELLING`, `CANCELLED` |
 | `cancelledAt`, `refundBatchId` | Set when cancellation starts |
 
-### `Seats`
+### Seats
 
 | Attribute | Notes |
 |---|---|
 | `eventId` (PK) | Event identifier |
-| `seatId` (SK) | Zero-padded, e.g. `A-12-07`, so a row is a single range query |
+| `seatId` (SK) | Zero-padded (e.g. `A-12-07`) so a row is one range query |
 | `status` | `AVAILABLE`, `HELD`, `PAYING`, `SOLD` |
-| `holdId`, `holdOwner` | Identify the current hold. A group shares one `holdId` |
-| `expiresAt` | Hold deadline. Correctness reads this, not TTL |
-| `payUntil` | Payment deadline, set when the seat enters `PAYING` |
+| `holdId`, `holdOwner` | Current hold; a group shares one `holdId` |
+| `expiresAt` | Hold deadline; correctness reads this, not TTL |
+| `payUntil` | Payment deadline, set on entering `PAYING` |
 | `orderId` | Set when sold |
 | `version` | Optimistic locking |
 
-**Hold one seat**
+Hold one seat:
+
 ```
 UpdateItem
   SET status = HELD, holdId = :h, holdOwner = :u, expiresAt = :exp
@@ -391,7 +401,8 @@ UpdateItem
          OR (status = HELD AND expiresAt < :now)
 ```
 
-**Hold a group (all or nothing)**
+Hold a group (all or nothing):
+
 ```
 TransactWriteItems [
   Update seat A-12-10  (same SET and CONDITION as above)
@@ -403,7 +414,8 @@ TransactWriteItems [
 # and the reason for each item is returned.
 ```
 
-**Confirm a sale (all seats of the order)**
+Confirm a sale (all seats of the order):
+
 ```
 TransactWriteItems [
   Update each seat:
@@ -412,19 +424,19 @@ TransactWriteItems [
 ]
 ```
 
-### `Orders`
+### Orders
 
-`orderId` (PK), `userId` (GSI), `eventId` + `status` (GSI, used by the refund orchestrator), `seatIds`, `holdId`, `amount`, `status` (`PENDING`, `CONFIRMED`, `FAILED`, `REFUND_PENDING`, `REFUNDED`), `executionArn`, `idempotencyKey`, `createdAt`.
+`orderId` (PK), `userId` (GSI), `eventId` + `status` (GSI for refund orchestration), `seatIds`, `holdId`, `amount`, `status` (`PENDING`, `CONFIRMED`, `FAILED`, `REFUND_PENDING`, `REFUNDED`), `executionArn`, `idempotencyKey`, `createdAt`.
 
-### `Ledger`
+### Ledger
 
-Append-only entries (`AUTH`, `CAPTURE`, `VOID`, `REFUND`) with a conditional write on the idempotency key, so a duplicate is rejected.
+Append-only entries (`AUTH`, `CAPTURE`, `VOID`, `REFUND`) with a conditional write on the idempotency key so duplicates are rejected.
 
-### `RefundBatches`
+### RefundBatches
 
-`batchId` (PK), `eventId`, `total`, `succeeded`, `failed`, `status` (`RUNNING`, `COMPLETE`, `COMPLETE_WITH_FAILURES`), `startedAt`, `finishedAt`, `reportKey`. Counters are updated with atomic `ADD`.
+`batchId` (PK), `eventId`, `total`, `succeeded`, `failed`, `status` (`RUNNING`, `COMPLETE`, `COMPLETE_WITH_FAILURES`), `startedAt`, `finishedAt`, `reportKey`. Counters use atomic `ADD`.
 
-### `Idempotency`
+### Idempotency
 
 `key` (PK), `status`, stored `response`, and a `ttl` for cleanup.
 
@@ -432,24 +444,24 @@ Append-only entries (`AUTH`, `CAPTURE`, `VOID`, `REFUND`) with a conditional wri
 
 ## Key Design Decisions
 
-Short summaries. Full records live in [`docs/adr`](docs/adr).
+Summaries below. Full records live in [`docs/adr`](docs/adr).
 
 | Decision | Choice | Reason |
 |---|---|---|
-| Hold expiry | Check `expiresAt` at decision time, never trust TTL | TTL deletion can lag by minutes |
+| Hold expiry | Check `expiresAt` at decision time; never trust TTL | TTL deletion can lag by minutes |
 | Orchestration | Step Functions over pure choreography | Visible failure paths and execution history |
-| Seat modeling | One item per seat, not a single counter | Spreads writes and avoids one hot partition |
-| Payment protection | Add a `PAYING` state with `payUntil` | Prevents the hold-expiry race |
+| Seat modeling | One item per seat, not a counter | Spreads writes; avoids one hot partition |
+| Payment protection | `PAYING` state with `payUntil` | Prevents the hold-expiry race |
 | Payment flow | Authorize, confirm seat, then capture | Avoids most refunds |
 | Event publishing | DynamoDB Streams relay | Change and event cannot drift apart |
-| Storage | DynamoDB only | Conditional writes and transactions cover every need, with no VPC setup |
-| Language split | TypeScript core, Go tooling | Critical rules in one language, Go where concurrency helps |
-| Group holds | `TransactWriteItems` with a group size cap | All-or-nothing without building a lock system, accepting 2x write cost and bounded retries |
-| Adjacent seats | Server-side search over a sorted row | The client cannot be trusted to pick a valid block, and one range query reads a row |
-| Refund fan-out | SQS queue with capped worker concurrency | Backpressure is direct and simple to tune. Step Functions Distributed Map is a documented alternative |
-| Refund safety | Idempotency key per order plus conditional ledger write | Duplicates and retries can never refund twice |
-| Cancellation | Event status as a state machine, checked at hold, order, and saga entry | A single source of truth for "are we still selling?" |
-| Verification | An independent Go auditor | The system is not allowed to grade its own homework |
+| Storage | DynamoDB only | Conditional writes and transactions cover needs without VPC setup |
+| Language split | TypeScript core, Go tooling | Critical rules in one language; Go where concurrency helps |
+| Group holds | `TransactWriteItems` with a size cap | All-or-nothing without a lock manager; accepts 2x write cost |
+| Adjacent seats | Server-side search over a sorted row | Client cannot be trusted to pick a valid block |
+| Refund fan-out | SQS with capped worker concurrency | Direct backpressure; Distributed Map is a documented alternative |
+| Refund safety | Idempotency key per order + conditional ledger write | Duplicates never refund twice |
+| Cancellation | Event status checked at hold, order, and saga entry | Single source of truth for selling state |
+| Verification | Independent Go auditor | The system does not grade its own homework |
 
 ---
 
@@ -459,51 +471,53 @@ Short summaries. Full records live in [`docs/adr`](docs/adr).
 |---|---|
 | Two buyers take the same seat | Conditional write: one wins, one gets a conflict |
 | Client retries the purchase | Idempotency key returns the stored result |
-| SQS delivers a message twice | Execution name equals order ID, so a duplicate start is rejected |
-| Payment times out | Query provider status by idempotency key before retrying or releasing |
+| SQS delivers a message twice | Execution name equals order ID; duplicate start is rejected |
+| Payment times out | Query provider status by idempotency key before retry or release |
 | Duplicate payment callback | Ledger conditional write rejects the second entry |
 | Hold expires during payment | `PAYING` lock protects the seat until `payUntil` |
-| Hold expires and someone else took the seat | `ConfirmSeat` fails, then void or refund |
+| Hold expires and another buyer takes the seat | `ConfirmSeat` fails, then void or refund |
 | TTL deletes late | Correctness uses `expiresAt` checks and the sweeper |
 | Ticket issuance fails | Retry, then refund and release the seat |
 | Lambda crashes mid-step | Step Functions retries the idempotent step |
 | Inconsistent data slips through | Scheduled reconciler repairs it |
-| Payment provider is down | Retry with backoff, then a clear `FAILED` state |
-| Message keeps failing | Goes to DLQ, alarm fires, replay tool pushes it back |
-| **Only 3 of 4 group seats are free** | The transaction is rejected, nothing is held, the server tries another block or returns `409` |
-| **Two groups want overlapping seats** | One transaction commits, the other is cancelled cleanly. No partial holds |
-| **Transaction conflict under load** | Retry with jittered backoff, bounded attempts, then a clear error |
-| **Group hold expires mid-payment** | The whole group stays `PAYING` together until `payUntil` |
-| **Event cancelled while a purchase is mid-saga** | New steps are rejected. If money was captured, the order is refunded by the cancel flow or the reconciler |
-| **Provider throttles refunds (429)** | Message returns to the queue with a longer delay, and worker concurrency stays capped |
-| **Refund call times out** | Check refund status by idempotency key before retrying |
-| **Duplicate refund message** | Idempotency key and conditional ledger write prevent a second refund |
-| **A refund keeps failing** | Goes to the DLQ, the batch ends `COMPLETE_WITH_FAILURES`, an alarm fires, replay after the fix |
-| **Orchestrator crashes halfway** | The batch record and idempotent jobs make it safe to run again |
-| **Fan opens a ticket for a cancelled event** | Verification checks the event status and rejects it |
+| Payment provider is down | Retry with backoff, then `FAILED` |
+| Message keeps failing | DLQ, alarm, replay tool |
+| Only 3 of 4 group seats are free | Transaction rejected; nothing held; try another block or `409` |
+| Two groups want overlapping seats | One commits; the other cancels cleanly |
+| Transaction conflict under load | Jittered backoff, bounded attempts, then clear error |
+| Group hold expires mid-payment | Whole group stays `PAYING` until `payUntil` |
+| Event cancelled mid-saga | New steps rejected; captured money refunded by cancel flow or reconciler |
+| Provider throttles refunds (`429`) | Longer queue delay; capped concurrency |
+| Refund call times out | Check refund status by idempotency key before retry |
+| Duplicate refund message | Idempotency key and conditional ledger write |
+| Refund keeps failing | DLQ; batch ends `COMPLETE_WITH_FAILURES`; alarm; replay |
+| Orchestrator crashes halfway | Batch record and idempotent jobs make rerun safe |
+| Fan opens a ticket for a cancelled event | Verification checks event status and rejects |
 
 ---
 
 ## API Reference
 
-All write endpoints require a Cognito JWT. The user ID is taken from the token, never from the request body. Admin endpoints require the admin group.
+Write endpoints require a Cognito JWT. User ID comes from the token, never the request body. Admin endpoints require the admin group.
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/events/{eventId}/seats` | Seat availability for the map |
-| `POST` | `/events/{eventId}/holds` | Hold seats, either specific `seatIds` or a `groupSize` request. Returns `holdId`, `seatIds`, and `expiresAt`, or `409` if unavailable |
-| `POST` | `/orders` | Submit a purchase for a hold. Requires an `Idempotency-Key` header. Returns `202` |
+| `POST` | `/events/{eventId}/holds` | Hold seats (`seatIds` or `groupSize`). Returns `holdId`, `seatIds`, `expiresAt`, or `409` |
+| `POST` | `/orders` | Submit a purchase for a hold. Requires `Idempotency-Key`. Returns `202` |
 | `GET` | `/orders/{orderId}` | Poll order status |
-| `POST` | `/admin/events/{eventId}/cancel` | Cancel an event and start the refund batch (admin only) |
-| `GET` | `/admin/events/{eventId}/refunds` | Refund batch progress (admin only) |
+| `POST` | `/admin/events/{eventId}/cancel` | Cancel event and start refund batch (admin) |
+| `GET` | `/admin/events/{eventId}/refunds` | Refund batch progress (admin) |
 
-**Hold a group of four together**
+Hold a group of four:
+
 ```http
 POST /events/evt_001/holds
 Authorization: Bearer <jwt>
 
 { "groupSize": 4, "section": "A", "adjacent": true }
 ```
+
 ```http
 HTTP/1.1 201 Created
 {
@@ -513,7 +527,8 @@ HTTP/1.1 201 Created
 }
 ```
 
-**Submit the order**
+Submit the order:
+
 ```http
 POST /orders
 Idempotency-Key: 7b1c9a52-0c3e-4f5e-9a3d-2f1a8d6e4b10
@@ -521,15 +536,18 @@ Authorization: Bearer <jwt>
 
 { "holdId": "h_01HXYZ", "eventId": "evt_001" }
 ```
+
 ```http
 HTTP/1.1 202 Accepted
 { "orderId": "ord_01HABC", "status": "PENDING" }
 ```
 
-**Check refund progress**
+Check refund progress:
+
 ```http
 GET /admin/events/evt_001/refunds
 ```
+
 ```http
 HTTP/1.1 200 OK
 { "batchId": "rb_01HDEF", "total": 3120, "succeeded": 2840, "failed": 12, "status": "RUNNING" }
@@ -557,7 +575,7 @@ seatlock/
 │   ├── hold-sweeper/
 │   ├── reconciler/
 │   ├── stream-relay/
-│   ├── loadgen/              # concurrent load generator (singles, groups, cancellation)
+│   ├── loadgen/              # concurrent load generator
 │   └── auditor/              # independent invariant checker
 ├── tests/
 │   ├── integration/
@@ -579,11 +597,11 @@ seatlock/
 - Go 1.22+
 - Docker
 - AWS CLI and CDK (`npm install -g aws-cdk`)
-- An AWS account (only needed for the final deployment and load test)
+- An AWS account (required for cloud deploy and load tests)
 
 ### Run locally with MiniStack
 
-[MiniStack](https://github.com/ministackorg/ministack) is an open-source local AWS emulator. It lets you develop and run failure tests quickly, for free.
+[MiniStack](https://github.com/ministackorg/ministack) is an open-source local AWS emulator for development and failure tests.
 
 ```bash
 # Start the emulator
@@ -600,9 +618,9 @@ npm install
 cd infra && npx cdk deploy --all
 ```
 
-> Check the MiniStack documentation for how CDK bootstrapping works in your setup. Reset all emulator state between test runs with `POST http://localhost:4566/_ministack/reset`.
+See MiniStack docs for CDK bootstrapping in your setup. Reset emulator state between runs with `POST http://localhost:4566/_ministack/reset`.
 
-### Deploy to real AWS
+### Deploy to AWS
 
 ```bash
 unset AWS_ENDPOINT_URL
@@ -612,9 +630,9 @@ npx cdk bootstrap
 npx cdk deploy --all --context stage=dev
 ```
 
-Set a **billing alarm** before deploying anything.
+Set a billing alarm before deploying.
 
-### Run tests
+### Tests
 
 ```bash
 npm test                    # unit and integration tests
@@ -622,7 +640,7 @@ go test -race ./go/...      # Go tests with the race detector
 npm run test:failure        # failure-injection scenarios
 ```
 
-### Run the load test
+### Load test
 
 ```bash
 cd go/loadgen
@@ -635,18 +653,15 @@ go run . \
   --duration 30s
 ```
 
-### Simulate a cancellation and audit the result
+### Cancellation and audit
 
 ```bash
-# Cancel the event after the sale
 curl -X POST https://<your-api-url>/admin/events/evt_001/cancel \
   -H "Authorization: Bearer <admin-jwt>"
 
-# Watch refund progress
 curl https://<your-api-url>/admin/events/evt_001/refunds \
   -H "Authorization: Bearer <admin-jwt>"
 
-# Verify every invariant independently
 cd go/auditor && go run . --event evt_001
 ```
 
@@ -662,14 +677,14 @@ cd infra && npx cdk destroy --all
 
 ### Test layers
 
-| Layer | What it covers |
+| Layer | Coverage |
 |---|---|
-| Unit | Conditional-write logic, idempotency, state transitions, block search for groups |
+| Unit | Conditional-write logic, idempotency, state transitions, group block search |
 | Integration | Full flow against MiniStack |
-| Failure injection | Payment timeouts, duplicate callbacks, crashes mid-saga, hold expiry during payment, overlapping group requests, provider throttling during refunds |
-| Load | Burst of purchase attempts, with a share of group requests, against real AWS |
-| Cancellation | Cancel at a chosen moment, with orders still in flight |
-| Audit | A separate Go program checks every invariant from the raw data |
+| Failure injection | Payment timeouts, duplicate callbacks, mid-saga crashes, hold expiry during payment, overlapping groups, refund throttling |
+| Load | Burst of purchase attempts (including groups) against real AWS |
+| Cancellation | Cancel at a chosen moment with in-flight orders |
+| Audit | Independent Go program checks invariants from raw data |
 
 ### Targets
 
@@ -686,11 +701,11 @@ cd infra && npx cdk destroy --all
 | Paid orders refunded after cancellation | 100% |
 | Duplicate refunds | 0 |
 | Provider refund rate limit exceeded | 0 sustained violations |
-| Time to refund all orders (about 5,000) | a defined target, for example under 10 minutes |
+| Time to refund ~5,000 orders | under 10 minutes (example target) |
 
 ### Results
 
-> ⚠️ **To be filled in with measured numbers from real AWS runs. Do not publish estimates as results.**
+Results will be filled with measured numbers from real AWS runs. Estimates are not published as results.
 
 | Metric | Target | Result |
 |---|---|---|
@@ -710,98 +725,96 @@ cd infra && npx cdk destroy --all
 | Refunds sent to DLQ | | |
 | Cost per 1,000 purchases | | |
 
-**Bottlenecks found and how they were fixed:** _(add after load testing)_
+Bottlenecks and fixes will be documented after load testing.
 
 ---
 
 ## Observability
 
-**Metrics**
+Metrics:
+
 - Orders accepted, confirmed, failed, refunded
-- Conditional check failures (contention indicator)
+- Conditional check failures (contention)
 - Transaction cancellations and conflicts for group holds
 - SQS queue age and DLQ depth
 - Saga duration and failure rate
 - Reconciliation fixes
-- Refund queue backlog, refund rate per second, provider throttle responses, batch progress
+- Refund queue backlog, refund rate, provider throttles, batch progress
 
-**Alarms**
-- DLQ not empty (purchase queue or refund queue)
+Alarms:
+
+- DLQ not empty (purchase or refund queue)
 - Queue age too high
 - Saga failure rate above threshold
 - API 5xx rate
 - Lambda throttles and DynamoDB throttled requests
 - Refund batch not progressing
 
-**Tracing and logs**
-- X-Ray tracing across API, SQS, Step Functions, and Lambda
-- Structured JSON logs with the order ID and batch ID as correlation IDs
+Tracing and logs:
+
+- X-Ray across API, SQS, Step Functions, and Lambda
+- Structured JSON logs with order ID and batch ID as correlation IDs
 
 ---
 
 ## Security
 
-- JWT authentication on every write endpoint, with the user ID from the token only
-- An admin group for cancellation and refund endpoints
+- JWT on every write endpoint; user ID from the token only
+- Admin group for cancellation and refund endpoints
 - Least-privilege IAM role per function and state machine
 - Encryption at rest with KMS for tables, queues, and S3
-- Tickets carry a KMS signature so gate scanners can detect forgeries, and verification also checks the event status
-- Secrets in Secrets Manager, configuration in Parameter Store
-- Presigned, short-lived URLs for ticket downloads
+- Tickets signed with KMS; verification also checks event status
+- Secrets in Secrets Manager; configuration in Parameter Store
+- Short-lived presigned URLs for ticket downloads
 - Rate limiting and throttling at the API layer
 
 ---
 
 ## Cost
 
-- DynamoDB on-demand capacity (note that transactions cost about twice a normal write)
-- Serverless services that cost little at test volumes
+- DynamoDB on-demand (transactions cost about twice a normal write)
+- Serverless services with low cost at test volumes
 - No NAT Gateways or always-on containers
-- Billing alarm set before any deployment
+- Billing alarm before any deployment
 - Stacks destroyed after load tests
 
-Measured cost per 1,000 purchases is reported in the [results](#results) section.
+Measured cost per 1,000 purchases is reported in [Results](#results).
 
 ---
 
 ## Roadmap
 
-- [ ] **Stage 1:** CDK foundation, single-seat `POST /holds`, seats table, Cognito auth
-- [ ] **Stage 2:** Concurrency control, expiry logic, contention test
-- [ ] **Stage 3:** Group holds with transactions, block search, overlap tests
-- [ ] **Stage 4:** Orders, idempotency, SQS buffering
-- [ ] **Stage 5:** Step Functions saga with compensation (group aware), mock payment provider
-- [ ] **Stage 6:** Streams relay, EventBridge, notifications
-- [ ] **Stage 7:** Signed tickets, KMS, secrets, least-privilege IAM
-- [ ] **Stage 8:** DLQ replay, hold sweeper, reconciler
-- [ ] **Stage 9:** Event cancellation, refund orchestrator, rate-limited refund workers, batch tracking
-- [ ] **Stage 10:** Dashboards, alarms, tracing
-- [ ] **Stage 11:** Go auditor, load and failure tests, results table, cost report
-- [ ] **Stage 12:** CI/CD, dev and prod environments, canary deploys
+- [ ] Stage 1: CDK foundation, single-seat `POST /holds`, seats table, Cognito auth
+- [ ] Stage 2: Concurrency control, expiry logic, contention test
+- [ ] Stage 3: Group holds with transactions, block search, overlap tests
+- [ ] Stage 4: Orders, idempotency, SQS buffering
+- [ ] Stage 5: Step Functions saga with compensation (group-aware), mock payment provider
+- [ ] Stage 6: Streams relay, EventBridge, notifications
+- [ ] Stage 7: Signed tickets, KMS, secrets, least-privilege IAM
+- [ ] Stage 8: DLQ replay, hold sweeper, reconciler
+- [ ] Stage 9: Event cancellation, refund orchestrator, rate-limited workers, batch tracking
+- [ ] Stage 10: Dashboards, alarms, tracing
+- [ ] Stage 11: Go auditor, load and failure tests, results table, cost report
+- [ ] Stage 12: CI/CD, dev and prod environments, canary deploys
 
-**Possible extensions**
+Possible extensions:
+
 - Waiting room and bot defenses
 - Live seat map over WebSockets
 - Seat map frontend on CloudFront and S3
 - Postgres ledger for a relational comparison
 - Purchase analytics with Kinesis Firehose, S3, and Athena
-- Partial cancellation (refund only some ticket types)
-
----
-
-## What I Learned
-
-_(Fill this in as you build. Honest, specific lessons make a README stand out. For example: what surprised you about DynamoDB transactions, how you tuned refund concurrency, what broke under load, what you would design differently.)_
+- Partial cancellation (refund selected ticket types only)
 
 ---
 
 ## Limitations
 
-- This is a **learning and portfolio project**, not production software
-- The payment provider and ticket scanning are **simulated**
-- Local runs use an emulator, so performance numbers come only from real AWS runs
+- Learning and portfolio project, not production software
+- Payment provider and ticket scanning are simulated
+- Local runs use an emulator; performance numbers come only from real AWS
 - No real payment processing, PCI compliance, or fraud detection
-- Group booking assumes simple row-based adjacency, with no accessibility or venue-geometry rules
+- Group booking assumes simple row-based adjacency (no accessibility or venue-geometry rules)
 
 ---
 
