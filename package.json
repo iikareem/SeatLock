@@ -1,0 +1,19 @@
+{
+  "name": "seatlock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serverless ticket-drop backend — concurrency-safe holds, sagas, and mass refunds",
+  "scripts": {
+    "build": "echo \"TODO: build TypeScript services and CDK\"",
+    "test": "echo \"TODO: run unit and integration tests\"",
+    "test:failure": "echo \"TODO: run failure-injection scenarios\"",
+    "cdk": "cd infra && npx cdk",
+    "ministack:up": "docker compose up -d",
+    "ministack:down": "docker compose down",
+    "ministack:reset": "curl -s -X POST http://localhost:4566/_ministack/reset",
+    "ministack:health": "curl -s http://localhost:4566/_ministack/health"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

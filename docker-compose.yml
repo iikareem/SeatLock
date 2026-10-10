@@ -1,0 +1,33 @@
+# Local AWS emulator for SeatLock development and failure tests.
+# https://github.com/ministackorg/ministack
+#
+# Start:  docker compose up -d
+# Health: curl http://localhost:4566/_ministack/health
+# Reset:  curl -X POST http://localhost:4566/_ministack/reset
+
+services:
+  ministack:
+    image: ministackorg/ministack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - MINISTACK_REGION=us-east-1
+      - MINISTACK_ACCOUNT_ID=000000000000
+      # docker = run Lambdas in containers (needed for non-Python runtimes)
+      - LAMBDA_EXECUTOR=docker
+      - LOG_LEVEL=INFO
+    volumes:
+      # Required so MiniStack can start Lambda containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
